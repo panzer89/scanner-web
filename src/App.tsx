@@ -3,6 +3,7 @@ import Home from './pages/Home';
 import Scanner from './pages/Scanner';
 import Archive from './pages/Archive';
 import Preview from './pages/Preview';
+import Cloud from './pages/Cloud';
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
       <Route path="/scan" element={<Scanner />} />
       <Route path="/archive" element={<Archive />} />
       <Route path="/doc/:id" element={<Preview />} />
+      <Route path="/cloud" element={<Cloud />} />
     </Routes>
   );
 }

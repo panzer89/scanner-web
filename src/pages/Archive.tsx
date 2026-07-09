@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { deleteDoc, listDocs } from '../lib/db';
+import { deleteCloudDoc } from '../lib/cloud';
 import { sharePdf } from '../lib/share';
 import type { ScanDoc, SortKey } from '../lib/types';
 import './Archive.css';
@@ -75,6 +76,7 @@ export default function Archive() {
     e.stopPropagation();
     if (!confirm(`Eliminare "${doc.name}"?`)) return;
     await deleteDoc(doc.id);
+    deleteCloudDoc(doc.id); // rimuove anche dal cloud, se attivo
     reload();
   }
 

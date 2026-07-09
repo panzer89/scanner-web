@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listDocs } from '../lib/db';
+import { isConfigured } from '../lib/cloud';
 import './Home.css';
 
 export default function Home() {
@@ -37,7 +38,13 @@ export default function Home() {
         </button>
       </div>
 
-      <p className="muted home-footer">Modalità locale · i file restano sul telefono</p>
+      <button className="home-cloud" onClick={() => navigate('/cloud')}>
+        ☁️ Cloud {isConfigured() ? '· connesso' : '· non attivo'}
+      </button>
+
+      <p className="muted home-footer">
+        {isConfigured() ? 'Sincronizzato sul tuo cloud' : 'Modalità locale · i file restano sul telefono'}
+      </p>
     </div>
   );
 }

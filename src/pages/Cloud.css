@@ -1,0 +1,44 @@
+.cloud {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cloud-intro {
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 0;
+}
+.cloud-textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  resize: vertical;
+  background: var(--card);
+  color: var(--text);
+}
+.cloud-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cloud-ok {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--success);
+}
+.cloud-hint {
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+.cloud-msg {
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}

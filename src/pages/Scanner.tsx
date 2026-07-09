@@ -10,7 +10,8 @@ import {
 } from '../lib/scanner';
 import { buildPdf, makeThumb } from '../lib/pdf';
 import { saveDoc } from '../lib/db';
-import type { Filter } from '../lib/types';
+import { autoUpload } from '../lib/cloud';
+import type { Filter, ScanDoc } from '../lib/types';
 import './Scanner.css';
 
 type Stage = 'loading' | 'camera' | 'busy' | 'adjust' | 'filter';
@@ -227,7 +228,7 @@ export default function Scanner() {
       setSaving(true);
       const pdf = await buildPdf(pages);
       const thumb = await makeThumb(pages[0]);
-      await saveDoc({
+      const newDoc: ScanDoc = {
         id: `${Date.now()}_${Math.floor(Math.random() * 1e5)}`,
         name: name.trim() || 'Documento senza nome',
         createdAt: Date.now(),
@@ -235,7 +236,9 @@ export default function Scanner() {
         pdf,
         thumb,
         size: pdf.size,
-      });
+      };
+      await saveDoc(newDoc);
+      autoUpload(newDoc); // caricamento cloud in background (se attivo)
       navigate('/archive');
     } catch (err) {
       console.error(err);
