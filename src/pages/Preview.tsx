@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { deleteDoc, getDoc } from '../lib/db';
+import { isConfigured, uploadDoc } from '../lib/cloud';
 import { downloadBlob, sharePdf } from '../lib/share';
 import type { ScanDoc } from '../lib/types';
 import './Preview.css';
@@ -15,6 +16,7 @@ export default function Preview() {
   const [doc, setDoc] = useState<ScanDoc | null>(null);
   const [images, setImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cloudState, setCloudState] = useState<'idle' | 'busy' | 'done'>('idle');
 
   useEffect(() => {
     if (!id) return;
@@ -67,6 +69,19 @@ export default function Preview() {
     navigate('/archive');
   }
 
+  async function onUploadCloud() {
+    if (!doc) return;
+    try {
+      setCloudState('busy');
+      await uploadDoc(doc);
+      setCloudState('done');
+    } catch (e) {
+      console.error(e);
+      setCloudState('idle');
+      alert('Caricamento sul cloud fallito. Controlla le impostazioni Cloud.');
+    }
+  }
+
   return (
     <div className="screen">
       <div className="topbar">
@@ -96,8 +111,13 @@ export default function Preview() {
           <button className="btn" onClick={() => downloadBlob(doc.pdf, `${doc.name}.pdf`)}>
             ⬇️ Scarica
           </button>
+          {isConfigured() && (
+            <button className="btn" disabled={cloudState === 'busy'} onClick={onUploadCloud}>
+              {cloudState === 'busy' ? '☁️…' : cloudState === 'done' ? '☁️✅' : '☁️ Cloud'}
+            </button>
+          )}
           <button className="btn btn-primary" onClick={() => sharePdf(doc.name, doc.pdf)}>
-            📤 Condividi
+            📤 Invia
           </button>
           <button className="btn btn-danger" onClick={onDelete}>🗑</button>
         </div>

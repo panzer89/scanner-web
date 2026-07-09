@@ -42,3 +42,7 @@
   border: 1px solid var(--border);
   border-radius: 12px;
 }
+.cloud-guide-btn {
+  margin-top: 8px;
+  color: var(--primary);
+}

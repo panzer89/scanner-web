@@ -209,6 +209,16 @@ export async function autoUpload(d: ScanDoc): Promise<void> {
   }
 }
 
+// Carica sul cloud TUTTE le scansioni locali (utile se ne avevi già prima di attivare il cloud).
+export async function uploadAllLocal(): Promise<number> {
+  await ensure();
+  const local = await idbList();
+  for (const d of local) {
+    await uploadDoc(d);
+  }
+  return local.length;
+}
+
 // Sincronizzazione a due vie (per id): carica i locali mancanti, scarica i cloud mancanti.
 export async function syncNow(): Promise<{ uploaded: number; downloaded: number }> {
   await ensure();

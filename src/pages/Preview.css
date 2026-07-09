@@ -51,7 +51,10 @@
 }
 .prev-actions .btn {
   flex: 1;
+  padding: 12px 8px;
+  font-size: 14px;
 }
 .prev-actions .btn-danger {
   flex: 0 0 auto;
+  padding: 12px 14px;
 }

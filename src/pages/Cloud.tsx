@@ -7,6 +7,7 @@ import {
   saveConfig,
   syncNow,
   testConnection,
+  uploadAllLocal,
 } from '../lib/cloud';
 import './Cloud.css';
 
@@ -56,6 +57,20 @@ export default function Cloud() {
     }
   }
 
+  async function uploadAll() {
+    setMsg(null);
+    try {
+      setBusy(true);
+      const n = await uploadAllLocal();
+      setMsg(`✅ Caricate ${n} scansioni sul cloud.`);
+    } catch (e) {
+      console.error(e);
+      setMsg('❌ Caricamento fallito. Riprova o ricontrolla le impostazioni Firebase.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function disconnect() {
     if (!confirm('Scollegare il cloud da questo dispositivo? I documenti locali restano.')) return;
     clearConfig();
@@ -78,7 +93,10 @@ export default function Cloud() {
               <div className="muted">Progetto: {config.projectId}</div>
             </div>
             <button className="btn btn-primary btn-block" disabled={busy} onClick={sync}>
-              {busy ? 'Sincronizzo…' : '🔄 Sincronizza ora'}
+              {busy ? 'Attendi…' : '🔄 Sincronizza ora'}
+            </button>
+            <button className="btn btn-block" disabled={busy} onClick={uploadAll}>
+              ⬆️ Carica tutto sul cloud
             </button>
             <button className="btn btn-block" disabled={busy} onClick={disconnect}>
               Scollega cloud
@@ -108,6 +126,10 @@ export default function Cloud() {
         )}
 
         {msg && <p className="cloud-msg">{msg}</p>}
+
+        <button className="btn btn-block cloud-guide-btn" onClick={() => navigate('/guida')}>
+          📖 Come attivare il cloud (istruzioni)
+        </button>
       </div>
     </div>
   );
