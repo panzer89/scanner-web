@@ -41,7 +41,9 @@ function scaleCorners(c: Corners, k: number): Corners {
 export default function Scanner() {
   const navigate = useNavigate();
   const [stage, setStage] = useState<Stage>('loading');
-  const [mode, setMode] = useState<Mode>('live');
+  const [mode, setMode] = useState<Mode>(
+    () => (localStorage.getItem('scan_mode') as Mode) || 'live'
+  );
   const [error, setError] = useState<string | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [pages, setPages] = useState<string[]>([]);
@@ -49,7 +51,9 @@ export default function Scanner() {
   const [corners, setCorners] = useState<Corners | null>(null);
   const [liveCorners, setLiveCorners] = useState<Corners | null>(null);
   const [frameSize, setFrameSize] = useState<{ w: number; h: number } | null>(null);
-  const [filter, setFilter] = useState<Filter>('color');
+  const [filter, setFilter] = useState<Filter>(
+    () => (localStorage.getItem('scan_filter') as Filter) || 'color'
+  );
   const [filteredUrl, setFilteredUrl] = useState<string | null>(null);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
@@ -69,6 +73,11 @@ export default function Scanner() {
       .then(() => setStage('camera'))
       .catch(() => setError('Motore di scansione non caricato. Ricarica la pagina.'));
   }, []);
+
+  // Ricorda l'ultima modalità scelta (Live / Foto)
+  useEffect(() => {
+    localStorage.setItem('scan_mode', mode);
+  }, [mode]);
 
   // Modalità Live: avvia la fotocamera e il rilevamento continuo dei bordi
   useEffect(() => {
@@ -180,12 +189,13 @@ export default function Scanner() {
     if (!sourceRef.current || !corners) return;
     const result = extractPaper(sourceRef.current, corners);
     deskewRef.current = result;
-    updateFilter('color');
+    updateFilter(filter); // riusa l'ultimo filtro scelto
     setStage('filter');
   }
 
   function updateFilter(f: Filter) {
     setFilter(f);
+    localStorage.setItem('scan_filter', f);
     if (!deskewRef.current) return;
     const out = applyFilter(deskewRef.current, f);
     setFilteredUrl(out.toDataURL('image/jpeg', 0.95));

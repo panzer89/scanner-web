@@ -27,7 +27,13 @@ export default function Archive() {
   const [docs, setDocs] = useState<ScanDoc[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [query, setQuery] = useState('');
-  const [sort, setSort] = useState<SortKey>('date_desc');
+  const [sort, setSort] = useState<SortKey>(
+    () => (localStorage.getItem('arch_sort') as SortKey) || 'date_desc'
+  );
+
+  useEffect(() => {
+    localStorage.setItem('arch_sort', sort);
+  }, [sort]);
 
   async function reload() {
     const list = await listDocs();
