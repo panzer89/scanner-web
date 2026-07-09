@@ -69,11 +69,10 @@ function downscale(source: HTMLCanvasElement, scale: number): HTMLCanvasElement 
 // Rileva automaticamente i 4 angoli del foglio in una canvas.
 // Il rilevamento gira su una copia ridotta (più affidabile), poi riporta
 // gli angoli alle coordinate-pixel dell'immagine originale. Ritorna null se fallisce.
-export function detectCorners(source: HTMLCanvasElement): Corners | null {
+export function detectCorners(source: HTMLCanvasElement, maxDim = 1200): Corners | null {
   const cv = window.cv;
   if (!cv || !scanner) return null;
 
-  const maxDim = 1200;
   const scale = Math.min(1, maxDim / Math.max(source.width, source.height));
   const work = scale < 1 ? downscale(source, scale) : source;
   const inv = 1 / scale;

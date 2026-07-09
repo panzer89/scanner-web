@@ -14,6 +14,7 @@ import type { Filter } from '../lib/types';
 import './Scanner.css';
 
 type Stage = 'loading' | 'camera' | 'busy' | 'adjust' | 'filter';
+type Mode = 'live' | 'photo';
 type CornerKey = keyof Corners;
 const CORNER_ORDER: CornerKey[] = [
   'topLeftCorner',
@@ -28,13 +29,26 @@ function defaultName(): string {
   return `Scansione ${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} ${p(d.getHours())}${p(d.getMinutes())}`;
 }
 
+function scaleCorners(c: Corners, k: number): Corners {
+  return {
+    topLeftCorner: { x: c.topLeftCorner.x * k, y: c.topLeftCorner.y * k },
+    topRightCorner: { x: c.topRightCorner.x * k, y: c.topRightCorner.y * k },
+    bottomRightCorner: { x: c.bottomRightCorner.x * k, y: c.bottomRightCorner.y * k },
+    bottomLeftCorner: { x: c.bottomLeftCorner.x * k, y: c.bottomLeftCorner.y * k },
+  };
+}
+
 export default function Scanner() {
   const navigate = useNavigate();
   const [stage, setStage] = useState<Stage>('loading');
+  const [mode, setMode] = useState<Mode>('live');
   const [error, setError] = useState<string | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
   const [pages, setPages] = useState<string[]>([]);
   const [capturedUrl, setCapturedUrl] = useState<string | null>(null);
   const [corners, setCorners] = useState<Corners | null>(null);
+  const [liveCorners, setLiveCorners] = useState<Corners | null>(null);
+  const [frameSize, setFrameSize] = useState<{ w: number; h: number } | null>(null);
   const [filter, setFilter] = useState<Filter>('color');
   const [filteredUrl, setFilteredUrl] = useState<string | null>(null);
   const [naming, setNaming] = useState(false);
@@ -43,8 +57,10 @@ export default function Scanner() {
 
   const camInputRef = useRef<HTMLInputElement>(null);
   const galInputRef = useRef<HTMLInputElement>(null);
-  const sourceRef = useRef<HTMLCanvasElement | null>(null); // foto a piena risoluzione
-  const deskewRef = useRef<HTMLCanvasElement | null>(null); // risultato raddrizzato
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const sourceRef = useRef<HTMLCanvasElement | null>(null);
+  const deskewRef = useRef<HTMLCanvasElement | null>(null);
   const dragging = useRef<CornerKey | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
 
@@ -53,6 +69,69 @@ export default function Scanner() {
       .then(() => setStage('camera'))
       .catch(() => setError('Motore di scansione non caricato. Ricarica la pagina.'));
   }, []);
+
+  // Modalità Live: avvia la fotocamera e il rilevamento continuo dei bordi
+  useEffect(() => {
+    if (stage !== 'camera' || mode !== 'live') return;
+    let stream: MediaStream | null = null;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const detCanvas = document.createElement('canvas');
+    setLiveError(null);
+
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } },
+          audio: false,
+        });
+        streamRef.current = stream;
+        const v = videoRef.current;
+        if (!v) return;
+        v.srcObject = stream;
+        v.onloadedmetadata = () => setFrameSize({ w: v.videoWidth, h: v.videoHeight });
+        await v.play().catch(() => {});
+
+        timer = setInterval(() => {
+          const vid = videoRef.current;
+          if (!vid || !vid.videoWidth) return;
+          const maxD = 480;
+          const s = Math.min(1, maxD / Math.max(vid.videoWidth, vid.videoHeight));
+          detCanvas.width = Math.round(vid.videoWidth * s);
+          detCanvas.height = Math.round(vid.videoHeight * s);
+          detCanvas.getContext('2d')!.drawImage(vid, 0, 0, detCanvas.width, detCanvas.height);
+          const c = detectCorners(detCanvas, 640);
+          setLiveCorners(c ? scaleCorners(c, 1 / s) : null);
+        }, 240);
+      } catch {
+        setLiveError('Fotocamera non disponibile. Usa la modalità Foto.');
+      }
+    })();
+
+    return () => {
+      if (timer) clearInterval(timer);
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      setLiveCorners(null);
+    };
+  }, [stage, mode]);
+
+  function loadIntoSource(c: HTMLCanvasElement, presetCorners?: Corners | null) {
+    sourceRef.current = c;
+    setCapturedUrl(c.toDataURL('image/jpeg', 0.95));
+    const detected = detectCorners(c) || presetCorners || defaultCorners(c.width, c.height);
+    setCorners(detected);
+    setStage('adjust');
+  }
+
+  function captureLive() {
+    const v = videoRef.current;
+    if (!v || !v.videoWidth) return;
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth;
+    c.height = v.videoHeight;
+    c.getContext('2d')!.drawImage(v, 0, 0);
+    loadIntoSource(c, liveCorners);
+  }
 
   function onPickFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -66,14 +145,7 @@ export default function Scanner() {
       c.height = img.naturalHeight;
       c.getContext('2d')!.drawImage(img, 0, 0);
       URL.revokeObjectURL(img.src);
-      sourceRef.current = c;
-      setCapturedUrl(c.toDataURL('image/jpeg', 0.95));
-      // Il rilevamento è pesante: lo lanciamo dopo un tick per mostrare il "busy"
-      setTimeout(() => {
-        const detected = detectCorners(c) || defaultCorners(c.width, c.height);
-        setCorners(detected);
-        setStage('adjust');
-      }, 30);
+      setTimeout(() => loadIntoSource(c), 30);
     };
     img.onerror = () => {
       setError('Immagine non valida.');
@@ -179,6 +251,11 @@ export default function Scanner() {
     }).join(' ');
   }
 
+  function livePolygon(): string {
+    if (!liveCorners) return '';
+    return CORNER_ORDER.map((k) => `${liveCorners[k].x},${liveCorners[k].y}`).join(' ');
+  }
+
   // --- Render ---
   if (stage === 'loading' || stage === 'busy') {
     return (
@@ -200,28 +277,46 @@ export default function Scanner() {
 
   return (
     <div className="screen scan">
-      <input
-        ref={camInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        hidden
-        onChange={onPickFile}
-      />
+      <input ref={camInputRef} type="file" accept="image/*" capture="environment" hidden onChange={onPickFile} />
       <input ref={galInputRef} type="file" accept="image/*" hidden onChange={onPickFile} />
 
-      {/* STAGE CAMERA */}
       {stage === 'camera' && (
         <>
           <div className="scan-topbar">
             <button className="back-btn" onClick={() => navigate('/')}>✕</button>
-            <span>Nuova scansione</span>
+            <div className="scan-modes">
+              <button className={mode === 'live' ? 'active' : ''} onClick={() => setMode('live')}>Live</button>
+              <button className={mode === 'photo' ? 'active' : ''} onClick={() => setMode('photo')}>Foto</button>
+            </div>
           </div>
-          <div className="scan-placeholder" onClick={() => camInputRef.current?.click()}>
-            <div className="scan-ph-icon">📷</div>
-            <p>Tocca per scattare la foto<br />del documento</p>
-            <p className="muted" style={{ fontSize: 13 }}>Usa la fotocamera del telefono (alta qualità)</p>
-          </div>
+
+          {mode === 'live' ? (
+            <div className="scan-live-wrap">
+              <video ref={videoRef} playsInline muted className="scan-live-video" />
+              {frameSize && (
+                <svg
+                  className="scan-live-overlay"
+                  viewBox={`0 0 ${frameSize.w} ${frameSize.h}`}
+                  preserveAspectRatio="xMidYMid meet"
+                >
+                  <polygon points={livePolygon()} />
+                </svg>
+              )}
+              {liveError && (
+                <div className="scan-live-msg">
+                  <p>{liveError}</p>
+                  <button className="btn btn-primary" onClick={() => setMode('photo')}>Passa a Foto</button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="scan-placeholder" onClick={() => camInputRef.current?.click()}>
+              <div className="scan-ph-icon">📷</div>
+              <p>Tocca per scattare la foto<br />del documento</p>
+              <p className="muted" style={{ fontSize: 13 }}>Fotocamera del telefono (massima qualità)</p>
+            </div>
+          )}
+
           {pages.length > 0 && (
             <div className="scan-pagestrip">
               {pages.map((p, i) => (
@@ -229,13 +324,14 @@ export default function Scanner() {
               ))}
             </div>
           )}
+
           <div className="scan-controls">
             <button className="scan-side" onClick={() => galInputRef.current?.click()}>
               🖼️<span>Galleria</span>
             </button>
             <button
               className="scan-shutter"
-              onClick={() => camInputRef.current?.click()}
+              onClick={() => (mode === 'live' ? captureLive() : camInputRef.current?.click())}
               aria-label="Scatta"
             />
             <button className="scan-side" disabled={pages.length === 0} onClick={finish}>
@@ -245,7 +341,6 @@ export default function Scanner() {
         </>
       )}
 
-      {/* STAGE ADJUST */}
       {stage === 'adjust' && capturedUrl && (
         <>
           <div className="scan-topbar">
@@ -278,7 +373,6 @@ export default function Scanner() {
         </>
       )}
 
-      {/* STAGE FILTER */}
       {stage === 'filter' && filteredUrl && (
         <>
           <div className="scan-topbar">
@@ -306,7 +400,6 @@ export default function Scanner() {
         </>
       )}
 
-      {/* Modale nome */}
       {naming && (
         <div className="scan-modal">
           <div className="scan-modal-box">
