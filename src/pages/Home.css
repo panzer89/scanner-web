@@ -1,0 +1,69 @@
+.home {
+  justify-content: center;
+  padding: 24px;
+  gap: 8px;
+}
+
+.home-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.home-logo {
+  font-size: 56px;
+}
+
+.home-header h1 {
+  font-size: 34px;
+  font-weight: 800;
+  margin: 4px 0 6px;
+}
+
+.home-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.home-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 28px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  text-align: center;
+  transition: transform 0.08s;
+}
+
+.home-card:active {
+  transform: scale(0.97);
+}
+
+.home-card-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.home-card-icon {
+  font-size: 42px;
+}
+
+.home-card-title {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.home-card-desc {
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+.home-footer {
+  text-align: center;
+  font-size: 12px;
+  margin-top: 28px;
+}
