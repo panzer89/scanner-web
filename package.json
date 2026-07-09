@@ -13,6 +13,7 @@
     "idb": "^8.0.3",
     "jscanify": "^1.4.2",
     "jspdf": "^4.2.1",
+    "pdfjs-dist": "^6.1.200",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1"
