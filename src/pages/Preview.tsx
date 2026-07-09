@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { deleteDoc, getDoc } from '../lib/db';
-import { isConfigured, uploadDoc } from '../lib/cloud';
+import { isConfigured, uploadOne } from '../lib/cloud';
 import { downloadBlob, sharePdf } from '../lib/share';
 import type { ScanDoc } from '../lib/types';
 import './Preview.css';
@@ -73,7 +73,7 @@ export default function Preview() {
     if (!doc) return;
     try {
       setCloudState('busy');
-      await uploadDoc(doc);
+      await uploadOne(doc);
       setCloudState('done');
     } catch (e) {
       console.error(e);

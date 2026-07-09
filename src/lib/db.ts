@@ -47,3 +47,11 @@ export async function renameDoc(id: string, name: string): Promise<void> {
     await saveDoc(doc);
   }
 }
+
+export async function markSynced(id: string, synced = true): Promise<void> {
+  const doc = await getDoc(id);
+  if (doc) {
+    doc.synced = synced;
+    await saveDoc(doc);
+  }
+}

@@ -10,6 +10,7 @@ export type ScanDoc = {
   pdf: Blob;
   thumb: Blob;
   size: number; // byte del PDF
+  synced?: boolean; // true se già caricato sul cloud
 };
 
 // Criteri di ordinamento dell'archivio.

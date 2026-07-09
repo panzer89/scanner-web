@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { deleteDoc, listDocs } from '../lib/db';
-import { deleteCloudDoc } from '../lib/cloud';
+import { deleteCloudDoc, isConfigured, uploadOne } from '../lib/cloud';
 import { sharePdf } from '../lib/share';
 import type { ScanDoc, SortKey } from '../lib/types';
 import './Archive.css';
@@ -28,6 +28,7 @@ export default function Archive() {
   const [docs, setDocs] = useState<ScanDoc[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [query, setQuery] = useState('');
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [sort, setSort] = useState<SortKey>(
     () => (localStorage.getItem('arch_sort') as SortKey) || 'date_desc'
   );
@@ -85,6 +86,20 @@ export default function Archive() {
     await sharePdf(doc.name, doc.pdf);
   }
 
+  async function onUploadOne(doc: ScanDoc, e: MouseEvent) {
+    e.stopPropagation();
+    try {
+      setUploadingId(doc.id);
+      await uploadOne(doc);
+      await reload();
+    } catch (err) {
+      console.error(err);
+      alert('Caricamento sul cloud fallito. Controlla le impostazioni Cloud.');
+    } finally {
+      setUploadingId(null);
+    }
+  }
+
   return (
     <div className="screen">
       <div className="topbar">
@@ -135,6 +150,16 @@ export default function Archive() {
                   {fmtDate(d.createdAt)} · {d.pageCount} pag. · {fmtSize(d.size)}
                 </div>
               </div>
+              {isConfigured() && !d.synced && (
+                <button
+                  className="icon-btn"
+                  disabled={uploadingId === d.id}
+                  onClick={(e) => onUploadOne(d, e)}
+                  aria-label="Carica sul cloud"
+                >
+                  {uploadingId === d.id ? '☁️…' : '☁️⬆️'}
+                </button>
+              )}
               <button className="icon-btn" onClick={(e) => onShare(d, e)}>📤</button>
               <button className="icon-btn" onClick={(e) => onDelete(d, e)}>🗑</button>
             </div>

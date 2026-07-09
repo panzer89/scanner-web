@@ -13,7 +13,7 @@ import {
   deleteDoc as fsDeleteDoc,
   type Firestore,
 } from 'firebase/firestore';
-import { listDocs as idbList, saveDoc as idbSave } from './db';
+import { listDocs as idbList, saveDoc as idbSave, markSynced } from './db';
 import type { ScanDoc } from './types';
 
 export type FbConfig = {
@@ -199,11 +199,17 @@ export async function deleteCloudDoc(id: string): Promise<void> {
   }
 }
 
+// Carica un documento e lo segna come sincronizzato in locale.
+export async function uploadOne(d: ScanDoc): Promise<void> {
+  await uploadDoc(d);
+  await markSynced(d.id, true);
+}
+
 // Carica in automatico un nuovo documento (silenzioso se il cloud non è attivo).
 export async function autoUpload(d: ScanDoc): Promise<void> {
   if (!isConfigured()) return;
   try {
-    await uploadDoc(d);
+    await uploadOne(d);
   } catch (e) {
     console.warn('Auto-upload cloud fallito', e);
   }
@@ -214,7 +220,7 @@ export async function uploadAllLocal(): Promise<number> {
   await ensure();
   const local = await idbList();
   for (const d of local) {
-    await uploadDoc(d);
+    await uploadOne(d);
   }
   return local.length;
 }
@@ -230,14 +236,17 @@ export async function syncNow(): Promise<{ uploaded: number; downloaded: number 
   let downloaded = 0;
   for (const l of local) {
     if (!cloudIds.has(l.id)) {
-      await uploadDoc(l);
+      await uploadOne(l);
       uploaded++;
+    } else if (!l.synced) {
+      await markSynced(l.id, true);
     }
   }
   for (const c of cloud) {
     if (!localIds.has(c.id)) {
       const d = await downloadDoc(c.id);
       if (d) {
+        d.synced = true;
         await idbSave(d);
         downloaded++;
       }
