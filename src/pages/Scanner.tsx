@@ -14,7 +14,7 @@ import { autoUpload } from '../lib/cloud';
 import type { Filter, ScanDoc } from '../lib/types';
 import './Scanner.css';
 
-type Stage = 'loading' | 'camera' | 'busy' | 'adjust' | 'filter';
+type Stage = 'loading' | 'camera' | 'busy' | 'adjust' | 'filter' | 'review';
 type Mode = 'live' | 'photo';
 type CornerKey = keyof Corners;
 const CORNER_ORDER: CornerKey[] = [
@@ -56,9 +56,11 @@ export default function Scanner() {
     () => (localStorage.getItem('scan_filter') as Filter) || 'color'
   );
   const [filteredUrl, setFilteredUrl] = useState<string | null>(null);
-  const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [autoCapture, setAutoCapture] = useState<boolean>(
+    () => localStorage.getItem('scan_auto') === '1'
+  );
 
   const camInputRef = useRef<HTMLInputElement>(null);
   const galInputRef = useRef<HTMLInputElement>(null);
@@ -68,6 +70,9 @@ export default function Scanner() {
   const deskewRef = useRef<HTMLCanvasElement | null>(null);
   const dragging = useRef<CornerKey | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
+  const autoCaptureRef = useRef(autoCapture);
+  const lastLiveRef = useRef<Corners | null>(null);
+  const stableRef = useRef(0);
 
   useEffect(() => {
     loadScanner()
@@ -80,6 +85,12 @@ export default function Scanner() {
     localStorage.setItem('scan_mode', mode);
   }, [mode]);
 
+  // Ricorda e tiene aggiornato l'auto-scatto
+  useEffect(() => {
+    autoCaptureRef.current = autoCapture;
+    localStorage.setItem('scan_auto', autoCapture ? '1' : '0');
+  }, [autoCapture]);
+
   // Modalità Live: avvia la fotocamera e il rilevamento continuo dei bordi
   useEffect(() => {
     if (stage !== 'camera' || mode !== 'live') return;
@@ -87,6 +98,8 @@ export default function Scanner() {
     let timer: ReturnType<typeof setInterval> | null = null;
     const detCanvas = document.createElement('canvas');
     setLiveError(null);
+    stableRef.current = 0;
+    lastLiveRef.current = null;
 
     (async () => {
       try {
@@ -111,6 +124,30 @@ export default function Scanner() {
           detCanvas.getContext('2d')!.drawImage(vid, 0, 0, detCanvas.width, detCanvas.height);
           const c = detectCorners(detCanvas, 640);
           setLiveCorners(c ? scaleCorners(c, 1 / s) : null);
+
+          // Auto-scatto: se i bordi restano fermi per ~1s
+          if (autoCaptureRef.current) {
+            if (c) {
+              const last = lastLiveRef.current;
+              if (last) {
+                const move = CORNER_ORDER.reduce(
+                  (sum, k) => sum + Math.hypot(c[k].x - last[k].x, c[k].y - last[k].y),
+                  0
+                );
+                const diag = Math.hypot(detCanvas.width, detCanvas.height);
+                if (move < diag * 0.03) stableRef.current += 1;
+                else stableRef.current = 0;
+              }
+              lastLiveRef.current = c;
+              if (stableRef.current >= 5) {
+                stableRef.current = 0;
+                captureLive();
+              }
+            } else {
+              stableRef.current = 0;
+              lastLiveRef.current = null;
+            }
+          }
         }, 240);
       } catch {
         setLiveError('Fotocamera non disponibile. Usa la modalità Foto.');
@@ -220,7 +257,21 @@ export default function Scanner() {
   function finish() {
     if (pages.length === 0) return;
     setName(defaultName());
-    setNaming(true);
+    setStage('review');
+  }
+
+  function movePage(i: number, dir: -1 | 1) {
+    const j = i + dir;
+    if (j < 0 || j >= pages.length) return;
+    setPages((p) => {
+      const next = [...p];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  }
+
+  function removePageAt(i: number) {
+    setPages((p) => p.filter((_, idx) => idx !== i));
   }
 
   async function doSave() {
@@ -244,7 +295,6 @@ export default function Scanner() {
       console.error(err);
       alert('Errore nella creazione del PDF.');
       setSaving(false);
-      setNaming(false);
     }
   }
 
@@ -301,6 +351,15 @@ export default function Scanner() {
               <button className={mode === 'live' ? 'active' : ''} onClick={() => setMode('live')}>Live</button>
               <button className={mode === 'photo' ? 'active' : ''} onClick={() => setMode('photo')}>Foto</button>
             </div>
+            <span style={{ flex: 1 }} />
+            {mode === 'live' && (
+              <button
+                className={`scan-auto ${autoCapture ? 'active' : ''}`}
+                onClick={() => setAutoCapture((v) => !v)}
+              >
+                ⚡ Auto
+              </button>
+            )}
           </div>
 
           {mode === 'live' ? (
@@ -413,19 +472,44 @@ export default function Scanner() {
         </>
       )}
 
-      {naming && (
-        <div className="scan-modal">
-          <div className="scan-modal-box">
-            <h3>Nome del documento</h3>
-            <input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-            <div className="scan-actions">
-              <button className="btn" onClick={() => setNaming(false)} disabled={saving}>Annulla</button>
-              <button className="btn btn-primary" onClick={doSave} disabled={saving}>
-                {saving ? 'Salvo…' : '📄 Crea PDF'}
-              </button>
+      {stage === 'review' && (
+        <>
+          <div className="scan-topbar">
+            <button className="back-btn" onClick={() => setStage('camera')}>‹</button>
+            <span>Rivedi e salva</span>
+          </div>
+          <div className="scan-review">
+            <input
+              className="scan-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Nome del documento"
+            />
+            <div className="scan-review-list">
+              {pages.map((p, i) => (
+                <div key={i} className="scan-review-item">
+                  <img src={p} alt={`pagina ${i + 1}`} />
+                  <span className="scan-review-num">Pagina {i + 1}</span>
+                  <div className="scan-review-acts">
+                    <button onClick={() => movePage(i, -1)} disabled={i === 0}>▲</button>
+                    <button onClick={() => movePage(i, 1)} disabled={i === pages.length - 1}>▼</button>
+                    <button onClick={() => removePageAt(i)}>🗑</button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        </div>
+          <div className="scan-actions">
+            <button className="btn" onClick={() => setStage('camera')}>+ Altra pagina</button>
+            <button
+              className="btn btn-primary"
+              disabled={saving || pages.length === 0}
+              onClick={doSave}
+            >
+              {saving ? 'Salvo…' : '📄 Crea PDF'}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

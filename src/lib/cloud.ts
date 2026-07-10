@@ -10,6 +10,8 @@ import {
   getDoc as fsGetDoc,
   getDocs,
   setDoc,
+  updateDoc,
+  onSnapshot,
   deleteDoc as fsDeleteDoc,
   type Firestore,
 } from 'firebase/firestore';
@@ -187,6 +189,17 @@ export async function downloadDoc(id: string): Promise<ScanDoc | null> {
   return { id, name: m.name, createdAt: m.createdAt, pageCount: m.pageCount, size: m.size, pdf, thumb };
 }
 
+// Aggiorna solo il nome sul cloud (dopo una rinomina locale).
+export async function updateCloudName(id: string, name: string): Promise<void> {
+  if (!isConfigured()) return;
+  try {
+    const database = await ensure();
+    await updateDoc(fsDoc(database, COL, id), { name, updatedAt: Date.now() });
+  } catch (e) {
+    console.warn('Rinomina cloud fallita', e);
+  }
+}
+
 export async function deleteCloudDoc(id: string): Promise<void> {
   if (!isConfigured()) return;
   try {
@@ -253,4 +266,45 @@ export async function syncNow(): Promise<{ uploaded: number; downloaded: number 
     }
   }
   return { uploaded, downloaded };
+}
+
+// Scarica solo i documenti che sono nel cloud ma non ancora in locale.
+export async function pullMissing(): Promise<number> {
+  await ensure();
+  const local = await idbList();
+  const localIds = new Set(local.map((l) => l.id));
+  const cloud = await listCloudMeta();
+  let n = 0;
+  for (const c of cloud) {
+    if (!localIds.has(c.id)) {
+      const d = await downloadDoc(c.id);
+      if (d) {
+        d.synced = true;
+        await idbSave(d);
+        n++;
+      }
+    }
+  }
+  return n;
+}
+
+// Ascolto in tempo reale: chiama `cb` a ogni cambiamento del cloud.
+// Ritorna una funzione per annullare l'ascolto.
+export function subscribeCloud(cb: () => void): () => void {
+  let unsub = () => {};
+  let cancelled = false;
+  ensure()
+    .then((database) => {
+      if (cancelled) return;
+      unsub = onSnapshot(
+        collection(database, COL),
+        () => cb(),
+        (err) => console.warn('Ascolto cloud interrotto', err)
+      );
+    })
+    .catch((e) => console.warn('Ascolto cloud non avviato', e));
+  return () => {
+    cancelled = true;
+    unsub();
+  };
 }

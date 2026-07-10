@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { deleteDoc, getDoc } from '../lib/db';
-import { isConfigured, uploadOne } from '../lib/cloud';
+import { deleteDoc, getDoc, renameDoc } from '../lib/db';
+import { isConfigured, updateCloudName, uploadOne } from '../lib/cloud';
 import { downloadBlob, sharePdf } from '../lib/share';
 import type { ScanDoc } from '../lib/types';
 import './Preview.css';
@@ -69,6 +69,17 @@ export default function Preview() {
     navigate('/archive');
   }
 
+  async function onRename() {
+    if (!doc) return;
+    const nn = prompt('Nuovo nome del documento:', doc.name);
+    if (nn === null) return;
+    const name = nn.trim();
+    if (!name) return;
+    await renameDoc(doc.id, name);
+    updateCloudName(doc.id, name);
+    setDoc({ ...doc, name });
+  }
+
   async function onUploadCloud() {
     if (!doc) return;
     try {
@@ -89,6 +100,9 @@ export default function Preview() {
           ‹ Indietro
         </button>
         <h1 className="prev-title">{doc?.name ?? 'Anteprima'}</h1>
+        {doc && (
+          <button className="icon-btn" onClick={onRename} aria-label="Rinomina">✏️</button>
+        )}
       </div>
 
       <div className="prev-pages">

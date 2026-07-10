@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { deleteDoc, listDocs } from '../lib/db';
-import { deleteCloudDoc, isConfigured, uploadOne } from '../lib/cloud';
+import { deleteCloudDoc, isConfigured, pullMissing, subscribeCloud, uploadOne } from '../lib/cloud';
 import { downloadBlob, sharePdf } from '../lib/share';
 import type { ScanDoc, SortKey } from '../lib/types';
 import './Archive.css';
@@ -53,6 +53,26 @@ export default function Archive() {
 
   useEffect(() => {
     reload();
+  }, []);
+
+  // Sincronizzazione in tempo reale: se un altro dispositivo carica una scansione,
+  // compare qui da sola (senza premere Sincronizza).
+  useEffect(() => {
+    if (!isConfigured()) return;
+    let pulling = false;
+    const unsub = subscribeCloud(async () => {
+      if (pulling) return;
+      pulling = true;
+      try {
+        const n = await pullMissing();
+        if (n > 0) await reload();
+      } catch (e) {
+        console.warn(e);
+      } finally {
+        pulling = false;
+      }
+    });
+    return unsub;
   }, []);
 
   useEffect(() => {
