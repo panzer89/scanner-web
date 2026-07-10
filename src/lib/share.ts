@@ -13,9 +13,8 @@ export function downloadBlob(blob: Blob, filename: string): void {
 
 // Usa la condivisione nativa del telefono (foglio di condivisione) se disponibile,
 // altrimenti scarica il file.
-export async function sharePdf(name: string, pdf: Blob): Promise<void> {
-  const filename = `${name || 'documento'}.pdf`;
-  const file = new File([pdf], filename, { type: 'application/pdf' });
+export async function shareBlob(filename: string, blob: Blob, mime: string): Promise<void> {
+  const file = new File([blob], filename, { type: mime });
 
   const nav = navigator as Navigator & {
     canShare?: (data?: ShareData) => boolean;
@@ -23,12 +22,16 @@ export async function sharePdf(name: string, pdf: Blob): Promise<void> {
 
   if (nav.canShare && nav.canShare({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: name });
+      await navigator.share({ files: [file] });
       return;
     } catch (e) {
       // se l'utente annulla o fallisce, ripieghiamo sul download
       if ((e as Error).name === 'AbortError') return;
     }
   }
-  downloadBlob(pdf, filename);
+  downloadBlob(blob, filename);
+}
+
+export function sharePdf(name: string, pdf: Blob): Promise<void> {
+  return shareBlob(`${name || 'documento'}.pdf`, pdf, 'application/pdf');
 }

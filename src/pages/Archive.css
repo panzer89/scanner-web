@@ -90,3 +90,42 @@
   text-align: center;
   margin-top: 60px;
 }
+
+/* Barra di selezione multipla */
+.sel-topbar {
+  gap: 6px;
+}
+.sel-topbar h1 {
+  font-size: 16px;
+}
+.sel-link {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+  padding: 6px 8px;
+  white-space: nowrap;
+}
+
+/* Casella di spunta */
+.arch-check {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: 2px solid var(--border-strong, #9aa4b2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  background: var(--card);
+}
+.arch-check.on {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.arch-row.selected {
+  border-color: var(--primary);
+  background: #eff4ff;
+}

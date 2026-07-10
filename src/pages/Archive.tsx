@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { deleteDoc, listDocs } from '../lib/db';
 import { deleteCloudDoc, isConfigured, uploadOne } from '../lib/cloud';
-import { sharePdf } from '../lib/share';
+import { downloadBlob, shareBlob, sharePdf } from '../lib/share';
+import { zipDocs } from '../lib/zip';
 import type { ScanDoc, SortKey } from '../lib/types';
 import './Archive.css';
 
@@ -25,6 +26,8 @@ function fmtSize(b: number): string {
 
 export default function Archive() {
   const navigate = useNavigate();
+  const isDesktop = useMemo(() => window.matchMedia('(pointer: fine)').matches, []);
+
   const [docs, setDocs] = useState<ScanDoc[]>([]);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [query, setQuery] = useState('');
@@ -32,6 +35,13 @@ export default function Archive() {
   const [sort, setSort] = useState<SortKey>(
     () => (localStorage.getItem('arch_sort') as SortKey) || 'date_desc'
   );
+
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+
+  const pressTimer = useRef<number | null>(null);
+  const longPressed = useRef(false);
 
   useEffect(() => {
     localStorage.setItem('arch_sort', sort);
@@ -46,7 +56,6 @@ export default function Archive() {
     reload();
   }, []);
 
-  // Crea gli URL delle miniature e li libera quando cambia la lista
   useEffect(() => {
     const map: Record<string, string> = {};
     docs.forEach((d) => {
@@ -73,19 +82,126 @@ export default function Archive() {
     });
   }, [docs, query, sort]);
 
+  const showCheckbox = isDesktop || selectionMode;
+  const showRowActions = !selectionMode;
+
+  // --- Selezione ---
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+    if (!isDesktop) setSelectionMode(false);
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === visible.length) {
+      clearSelection();
+    } else {
+      setSelected(new Set(visible.map((d) => d.id)));
+      if (!isDesktop) setSelectionMode(true);
+    }
+  }
+
+  // Long-press (solo touch) per entrare in modalità selezione
+  function onRowPointerDown(d: ScanDoc) {
+    if (isDesktop || selectionMode) return;
+    longPressed.current = false;
+    pressTimer.current = window.setTimeout(() => {
+      longPressed.current = true;
+      setSelectionMode(true);
+      setSelected(new Set([d.id]));
+      if (navigator.vibrate) navigator.vibrate(30);
+    }, 500);
+  }
+  function cancelPress() {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  }
+
+  function onRowClick(d: ScanDoc) {
+    if (longPressed.current) {
+      longPressed.current = false;
+      return;
+    }
+    if (selectionMode) {
+      toggle(d.id);
+      return;
+    }
+    navigate(`/doc/${d.id}`);
+  }
+
+  const chosen = () => docs.filter((d) => selected.has(d.id));
+
+  async function downloadSelected() {
+    const list = chosen();
+    if (list.length === 0) return;
+    if (list.length === 1) {
+      downloadBlob(list[0].pdf, `${list[0].name}.pdf`);
+      return;
+    }
+    try {
+      setBusy(true);
+      const zip = await zipDocs(list);
+      downloadBlob(zip, 'scansioni.zip');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendSelected() {
+    const list = chosen();
+    if (list.length === 0) return;
+    try {
+      setBusy(true);
+      if (list.length === 1) {
+        await sharePdf(list[0].name, list[0].pdf);
+      } else {
+        const zip = await zipDocs(list);
+        await shareBlob('scansioni.zip', zip, 'application/zip');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteSelected() {
+    const list = chosen();
+    if (list.length === 0) return;
+    if (!confirm(`Eliminare ${list.length} document${list.length === 1 ? 'o' : 'i'}?`)) return;
+    try {
+      setBusy(true);
+      for (const d of list) {
+        await deleteDoc(d.id);
+        deleteCloudDoc(d.id);
+      }
+      clearSelection();
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // --- Azioni singole (fuori selezione) ---
   async function onDelete(doc: ScanDoc, e: MouseEvent) {
     e.stopPropagation();
     if (!confirm(`Eliminare "${doc.name}"?`)) return;
     await deleteDoc(doc.id);
-    deleteCloudDoc(doc.id); // rimuove anche dal cloud, se attivo
+    deleteCloudDoc(doc.id);
     reload();
   }
-
   async function onShare(doc: ScanDoc, e: MouseEvent) {
     e.stopPropagation();
     await sharePdf(doc.name, doc.pdf);
   }
-
   async function onUploadOne(doc: ScanDoc, e: MouseEvent) {
     e.stopPropagation();
     try {
@@ -102,10 +218,28 @@ export default function Archive() {
 
   return (
     <div className="screen">
-      <div className="topbar">
-        <button className="back-btn" onClick={() => navigate('/')}>‹</button>
-        <h1>Archivio</h1>
-      </div>
+      {selected.size > 0 ? (
+        <div className="topbar sel-topbar">
+          <button className="back-btn" onClick={clearSelection}>✕</button>
+          <h1>{selected.size} selezionat{selected.size === 1 ? 'o' : 'i'}</h1>
+          <button className="sel-link" onClick={toggleSelectAll}>
+            {selected.size === visible.length ? 'Nessuno' : 'Tutti'}
+          </button>
+          <button className="icon-btn" disabled={busy} onClick={downloadSelected} aria-label="Scarica">⬇️</button>
+          <button className="icon-btn" disabled={busy} onClick={sendSelected} aria-label="Invia">📤</button>
+          <button className="icon-btn" disabled={busy} onClick={deleteSelected} aria-label="Elimina">🗑</button>
+        </div>
+      ) : (
+        <div className="topbar">
+          <button className="back-btn" onClick={() => navigate('/')}>‹</button>
+          <h1>Archivio</h1>
+          {!isDesktop && docs.length > 0 && (
+            <button className="sel-link" onClick={() => setSelectionMode((v) => !v)}>
+              {selectionMode ? 'Annulla' : 'Seleziona'}
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="arch-search">
         <span>🔍</span>
@@ -137,33 +271,59 @@ export default function Archive() {
             </p>
           </div>
         ) : (
-          visible.map((d) => (
-            <div key={d.id} className="arch-row" onClick={() => navigate(`/doc/${d.id}`)}>
-              {thumbs[d.id] ? (
-                <img className="arch-thumb" src={thumbs[d.id]} alt="" />
-              ) : (
-                <div className="arch-thumb arch-thumb-empty">📄</div>
-              )}
-              <div className="arch-info">
-                <div className="arch-name">{d.name}</div>
-                <div className="arch-meta muted">
-                  {fmtDate(d.createdAt)} · {d.pageCount} pag. · {fmtSize(d.size)}
+          visible.map((d) => {
+            const sel = selected.has(d.id);
+            return (
+              <div
+                key={d.id}
+                className={`arch-row ${sel ? 'selected' : ''}`}
+                onClick={() => onRowClick(d)}
+                onPointerDown={() => onRowPointerDown(d)}
+                onPointerUp={cancelPress}
+                onPointerLeave={cancelPress}
+                onPointerMove={cancelPress}
+              >
+                {showCheckbox && (
+                  <div
+                    className={`arch-check ${sel ? 'on' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggle(d.id);
+                    }}
+                  >
+                    {sel ? '✓' : ''}
+                  </div>
+                )}
+                {thumbs[d.id] ? (
+                  <img className="arch-thumb" src={thumbs[d.id]} alt="" />
+                ) : (
+                  <div className="arch-thumb arch-thumb-empty">📄</div>
+                )}
+                <div className="arch-info">
+                  <div className="arch-name">{d.name}</div>
+                  <div className="arch-meta muted">
+                    {fmtDate(d.createdAt)} · {d.pageCount} pag. · {fmtSize(d.size)}
+                  </div>
                 </div>
+                {showRowActions && (
+                  <>
+                    {isConfigured() && !d.synced && (
+                      <button
+                        className="icon-btn"
+                        disabled={uploadingId === d.id}
+                        onClick={(e) => onUploadOne(d, e)}
+                        aria-label="Carica sul cloud"
+                      >
+                        {uploadingId === d.id ? '☁️…' : '☁️⬆️'}
+                      </button>
+                    )}
+                    <button className="icon-btn" onClick={(e) => onShare(d, e)}>📤</button>
+                    <button className="icon-btn" onClick={(e) => onDelete(d, e)}>🗑</button>
+                  </>
+                )}
               </div>
-              {isConfigured() && !d.synced && (
-                <button
-                  className="icon-btn"
-                  disabled={uploadingId === d.id}
-                  onClick={(e) => onUploadOne(d, e)}
-                  aria-label="Carica sul cloud"
-                >
-                  {uploadingId === d.id ? '☁️…' : '☁️⬆️'}
-                </button>
-              )}
-              <button className="icon-btn" onClick={(e) => onShare(d, e)}>📤</button>
-              <button className="icon-btn" onClick={(e) => onDelete(d, e)}>🗑</button>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
