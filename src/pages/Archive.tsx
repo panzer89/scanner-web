@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { deleteDoc, listDocs } from '../lib/db';
 import { deleteCloudDoc, isConfigured, uploadOne } from '../lib/cloud';
-import { downloadBlob, shareBlob, sharePdf } from '../lib/share';
-import { zipDocs } from '../lib/zip';
+import { downloadBlob, sharePdf } from '../lib/share';
 import type { ScanDoc, SortKey } from '../lib/types';
 import './Archive.css';
 
@@ -141,35 +140,44 @@ export default function Archive() {
 
   const chosen = () => docs.filter((d) => selected.has(d.id));
 
-  async function downloadSelected() {
+  // Costruisce i File PDF in modo sincrono (i Blob sono già in memoria):
+  // fondamentale su iOS, dove condivisione/scaricamento devono avvenire
+  // dentro il gesto dell'utente, senza attese asincrone prima.
+  function toFiles(list: ScanDoc[]): File[] {
+    return list.map((d) => new File([d.pdf], `${d.name || 'documento'}.pdf`, { type: 'application/pdf' }));
+  }
+
+  function canShareFiles(files: File[]): boolean {
+    const nav = navigator as Navigator & { canShare?: (d?: ShareData) => boolean };
+    return !!(nav.canShare && nav.canShare({ files }));
+  }
+
+  function downloadSelected() {
     const list = chosen();
     if (list.length === 0) return;
-    if (list.length === 1) {
-      downloadBlob(list[0].pdf, `${list[0].name}.pdf`);
+    // Desktop (o singolo file): scarica direttamente
+    if (isDesktop || list.length === 1) {
+      list.forEach((d) => downloadBlob(d.pdf, `${d.name}.pdf`));
       return;
     }
-    try {
-      setBusy(true);
-      const zip = await zipDocs(list);
-      downloadBlob(zip, 'scansioni.zip');
-    } finally {
-      setBusy(false);
+    // Telefono con più file: usa il foglio di condivisione ("Salva su File")
+    const files = toFiles(list);
+    if (canShareFiles(files)) {
+      navigator.share({ files }).catch(() => {});
+    } else {
+      list.forEach((d) => downloadBlob(d.pdf, `${d.name}.pdf`));
     }
   }
 
-  async function sendSelected() {
+  function sendSelected() {
     const list = chosen();
     if (list.length === 0) return;
-    try {
-      setBusy(true);
-      if (list.length === 1) {
-        await sharePdf(list[0].name, list[0].pdf);
-      } else {
-        const zip = await zipDocs(list);
-        await shareBlob('scansioni.zip', zip, 'application/zip');
-      }
-    } finally {
-      setBusy(false);
+    const files = toFiles(list);
+    if (canShareFiles(files)) {
+      navigator.share({ files }).catch(() => {});
+    } else {
+      // desktop o condivisione non disponibile: scarica i file
+      list.forEach((d) => downloadBlob(d.pdf, `${d.name}.pdf`));
     }
   }
 
